@@ -278,6 +278,7 @@ void nixlUcxEngine::vramFiniCtx()
 class nixlUcxIntReq : public nixlLinkElem<nixlUcxIntReq> {
     private:
         int _completed;
+        ucx_connection_ptr_t _conn;
     public:
         std::unique_ptr<std::string> amBuffer;
 
@@ -287,7 +288,21 @@ class nixlUcxIntReq : public nixlLinkElem<nixlUcxIntReq> {
 
         bool is_complete() const { return _completed; }
         void completed() { _completed = 1; }
+
+        void setConnection(ucx_connection_ptr_t conn) {
+            _conn = conn;
+        }
+
+        nixl_status_t checkConnection(size_t ep_id) const {
+            NIXL_ASSERT(_conn) << "Connection is not set";
+            return _conn->getEp(ep_id)->checkTxState();
+        }
 };
+
+static void nixlUcxReqSetConnection(nixlUcxReq req, ucx_connection_ptr_t conn) {
+    nixlUcxIntReq *req_int = reinterpret_cast<nixlUcxIntReq *>(req);
+    req_int->setConnection(conn);
+}
 
 static void _internalRequestInit(void *request)
 {
@@ -393,8 +408,9 @@ public:
                         out_ret = NIXL_IN_PROG;
                         break;
                     default:
-                        /* Any other ret value is ERR and will be returned */
-                        return ret;
+                        // Any other ret value is ERR and will be returned
+                        nixl_status_t conn_status = req->checkConnection(worker_id);
+                        return (conn_status == NIXL_SUCCESS) ? ret : conn_status;
                 }
             }
             req = req->next();
@@ -1040,6 +1056,10 @@ nixl_status_t nixlUcxEngine::postXfer (const nixl_xfer_op_t &operation,
             return NIXL_ERR_INVALID_PARAM;
         }
 
+        if (ret == NIXL_IN_PROG) {
+            nixlUcxReqSetConnection(req, rmd->conn);
+        }
+
         if (_retHelper(ret, intHandle, req)) {
             return ret;
         }
@@ -1051,6 +1071,11 @@ nixl_status_t nixlUcxEngine::postXfer (const nixl_xfer_op_t &operation,
      */
     rmd = (nixlUcxPublicMetadata*) remote[0].metadataP;
     ret = rmd->conn->getEp(workerId)->flushEp(req);
+
+    if (ret == NIXL_IN_PROG) {
+        nixlUcxReqSetConnection(req, rmd->conn);
+    }
+
     if (_retHelper(ret, intHandle, req)) {
         return ret;
     }
