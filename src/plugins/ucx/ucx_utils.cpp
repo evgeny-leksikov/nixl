@@ -45,7 +45,7 @@ get_ucx_backend_common_options() {
     nixl_b_params_t params = {{"ucx_devices", ""}, {"num_workers", "1"}};
 
     params.emplace(nixl_ucx_err_handling_param_name,
-                   ucx_err_mode_to_string(UCP_ERR_HANDLING_MODE_PEER));
+                   ucx_err_mode_to_string(UCP_ERR_HANDLING_MODE_FAILOVER));
     return params;
 }
 
@@ -80,6 +80,8 @@ ucx_err_mode_to_string(ucp_err_handling_mode_t t) {
         return "none";
     case UCP_ERR_HANDLING_MODE_PEER:
         return "peer";
+    case UCP_ERR_HANDLING_MODE_FAILOVER:
+        return "failover";
     default:
         throw std::invalid_argument(std::to_string(t));
     }
@@ -87,9 +89,10 @@ ucx_err_mode_to_string(ucp_err_handling_mode_t t) {
 
 [[nodiscard]] ucp_err_handling_mode_t
 ucx_err_mode_from_string(std::string_view s) {
-    constexpr std::array<ucp_err_handling_mode_t, 2> nixl_ucx_err_handling_modes = {
+    constexpr std::array<ucp_err_handling_mode_t, 3> nixl_ucx_err_handling_modes = {
         UCP_ERR_HANDLING_MODE_NONE,
         UCP_ERR_HANDLING_MODE_PEER,
+        UCP_ERR_HANDLING_MODE_FAILOVER,
     };
 
     for (const auto mode : nixl_ucx_err_handling_modes) {
